@@ -31,7 +31,11 @@ type encodeState struct {
 	writer *csv.Writer
 }
 
-var encodeStatePool sync.Pool
+var encodeStatePool sync.Pool = sync.Pool{
+	New: func() any {
+		return &encodeState{}
+	},
+}
 
 func newEncodeState(writer io.Writer) *encodeState {
 	csvWriter := csv.NewWriter(writer)
