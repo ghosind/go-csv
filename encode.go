@@ -83,13 +83,21 @@ func (e *encodeState) marshal(v any) (err error) {
 
 func (e *encodeState) writeRow(v reflect.Value, meta []*fieldMeta) error {
 	row := make([]string, len(meta))
-	for _, m := range meta {
+
+	for v.Kind() == reflect.Ptr {
+		if v.IsNil() {
+			return e.writer.Write(row)
+		}
+		v = v.Elem()
+	}
+
+	for i, m := range meta {
 		fv := v.Field(m.Index)
 		str, err := valueEncoder(m)(fv)
 		if err != nil {
 			return err
 		}
-		row[m.Index] = str
+		row[i] = str
 	}
 
 	return e.writer.Write(row)
@@ -101,6 +109,23 @@ var encoderCache sync.Map
 
 func valueEncoder(meta *fieldMeta) encoderFunc {
 	return typeEncoder(meta.Type)
+}
+
+type ptrEncoder struct {
+	elemEnc encoderFunc
+}
+
+func newPtrEncoder(t reflect.Type) encoderFunc {
+	enc := ptrEncoder{typeEncoder(t.Elem())}
+	return enc.encode
+}
+
+func (pe ptrEncoder) encode(v reflect.Value) (string, error) {
+	if v.IsNil() {
+		return "", nil
+	}
+
+	return pe.elemEnc(v.Elem())
 }
 
 func typeEncoder(t reflect.Type) encoderFunc {
@@ -137,6 +162,8 @@ func newTypeEncoder(t reflect.Type) encoderFunc {
 		return floatEncoder
 	case reflect.String:
 		return stringEncoder
+	case reflect.Ptr:
+		return newPtrEncoder(t)
 	default:
 		return unsupportedTypeEncoder
 	}
