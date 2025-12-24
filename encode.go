@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strconv"
 	"sync"
+	"time"
 )
 
 type Marshaler interface {
@@ -93,7 +94,7 @@ func (e *encodeState) writeRow(v reflect.Value, meta []*fieldMeta) error {
 
 	for i, m := range meta {
 		fv := v.Field(m.Index)
-		str, err := valueEncoder(m)(fv)
+		str, err := valueEncoder(m)(fv, m)
 		if err != nil {
 			return err
 		}
@@ -103,7 +104,7 @@ func (e *encodeState) writeRow(v reflect.Value, meta []*fieldMeta) error {
 	return e.writer.Write(row)
 }
 
-type encoderFunc func(reflect.Value) (string, error)
+type encoderFunc func(reflect.Value, *fieldMeta) (string, error)
 
 var encoderCache sync.Map
 
@@ -120,12 +121,12 @@ func newPtrEncoder(t reflect.Type) encoderFunc {
 	return enc.encode
 }
 
-func (pe ptrEncoder) encode(v reflect.Value) (string, error) {
+func (pe ptrEncoder) encode(v reflect.Value, m *fieldMeta) (string, error) {
 	if v.IsNil() {
 		return "", nil
 	}
 
-	return pe.elemEnc(v.Elem())
+	return pe.elemEnc(v.Elem(), m)
 }
 
 func typeEncoder(t reflect.Type) encoderFunc {
@@ -141,14 +142,12 @@ func typeEncoder(t reflect.Type) encoderFunc {
 var (
 	marshalerType     = reflect.TypeFor[Marshaler]()
 	textMarshalerType = reflect.TypeFor[encoding.TextMarshaler]()
+	timeType          = reflect.TypeFor[time.Time]()
 )
 
 func newTypeEncoder(t reflect.Type) encoderFunc {
-	if t.Implements(marshalerType) {
+	if t.Kind() != reflect.Ptr && reflect.PointerTo(t).Implements(marshalerType) {
 		return marshalerEncoder
-	}
-	if t.Implements(textMarshalerType) {
-		return textMarshalerEncoder
 	}
 
 	switch t.Kind() {
@@ -164,39 +163,55 @@ func newTypeEncoder(t reflect.Type) encoderFunc {
 		return stringEncoder
 	case reflect.Ptr:
 		return newPtrEncoder(t)
-	default:
-		return unsupportedTypeEncoder
+	case reflect.Struct:
+		if t.ConvertibleTo(timeType) {
+			return timeEncoder
+		}
 	}
+
+	if reflect.PointerTo(t).Implements(textMarshalerType) {
+		return textMarshalerEncoder
+	}
+
+	return unsupportedTypeEncoder
 }
 
-func boolEncoder(v reflect.Value) (string, error) {
+func boolEncoder(v reflect.Value, _ *fieldMeta) (string, error) {
 	s := strconv.FormatBool(v.Bool())
 	return s, nil
 }
 
-func intEncoder(v reflect.Value) (string, error) {
+func intEncoder(v reflect.Value, _ *fieldMeta) (string, error) {
 	s := strconv.FormatInt(v.Int(), 10)
 	return s, nil
 }
 
-func uintEncoder(v reflect.Value) (string, error) {
+func uintEncoder(v reflect.Value, _ *fieldMeta) (string, error) {
 	s := strconv.FormatUint(v.Uint(), 10)
 	return s, nil
 }
 
-func floatEncoder(v reflect.Value) (string, error) {
+func floatEncoder(v reflect.Value, _ *fieldMeta) (string, error) {
 	s := strconv.FormatFloat(v.Float(), 'f', -1, 64)
 	return s, nil
 }
 
-func stringEncoder(v reflect.Value) (string, error) {
+func stringEncoder(v reflect.Value, _ *fieldMeta) (string, error) {
 	return v.String(), nil
 }
 
-func marshalerEncoder(v reflect.Value) (string, error) {
-	if v.Kind() == reflect.Ptr && v.IsNil() {
-		return "", nil
+func timeEncoder(v reflect.Value, m *fieldMeta) (string, error) {
+	tm := v.Interface().(time.Time)
+
+	if m.Format != "" {
+		return tm.Format(m.Format), nil
 	}
+
+	// fallback to TextMarshalerEncoder
+	return textMarshalerEncoder(v, m)
+}
+
+func marshalerEncoder(v reflect.Value, _ *fieldMeta) (string, error) {
 	m, ok := v.Interface().(Marshaler)
 	if !ok {
 		return "", ErrUnsupportedType
@@ -208,10 +223,7 @@ func marshalerEncoder(v reflect.Value) (string, error) {
 	return string(b), nil
 }
 
-func textMarshalerEncoder(v reflect.Value) (string, error) {
-	if v.Kind() == reflect.Ptr && v.IsNil() {
-		return "", nil
-	}
+func textMarshalerEncoder(v reflect.Value, _ *fieldMeta) (string, error) {
 	m, ok := v.Interface().(encoding.TextMarshaler)
 	if !ok {
 		return "", ErrUnsupportedType
@@ -223,6 +235,6 @@ func textMarshalerEncoder(v reflect.Value) (string, error) {
 	return string(b), nil
 }
 
-func unsupportedTypeEncoder(v reflect.Value) (string, error) {
+func unsupportedTypeEncoder(v reflect.Value, _ *fieldMeta) (string, error) {
 	return "", ErrUnsupportedType
 }

@@ -1,4 +1,4 @@
-module github.com/foodieats/go-csv
+module github.com/ghosind/go-csv
 
 go 1.22
 

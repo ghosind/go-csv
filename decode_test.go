@@ -3,8 +3,8 @@ package csv_test
 import (
 	"testing"
 
-	"github.com/foodieats/go-csv"
 	"github.com/ghosind/go-assert"
+	"github.com/ghosind/go-csv"
 )
 
 func TestDecodeStruct(t *testing.T) {

@@ -1,11 +1,13 @@
 package csv_test
 
 import (
+	"errors"
 	"strconv"
 	"testing"
+	"time"
 
-	"github.com/foodieats/go-csv"
 	"github.com/ghosind/go-assert"
+	"github.com/ghosind/go-csv"
 )
 
 type SampleStruct struct {
@@ -182,6 +184,10 @@ type MarshalableStruct struct {
 }
 
 func (m MarshalableStruct) MarshalCSV() ([]byte, error) {
+	if m.ZipCode <= 0 {
+		return nil, errors.New("invalid zipcode")
+	}
+
 	return []byte(m.Country + " (" + strconv.Itoa(m.ZipCode) + ")"), nil
 }
 
@@ -201,6 +207,16 @@ func TestEncodeStructWithMarshalableField(t *testing.T) {
 	a.NilNow(err)
 	expected := "city,location\nNew York,USA (10001)\n"
 	a.EqualNow(expected, string(data))
+
+	sample = WrapMarshalableStruct{
+		City: "Unknown",
+		Location: MarshalableStruct{
+			Country: "Unknown",
+			ZipCode: -1,
+		},
+	}
+	_, err = csv.Marshal(sample)
+	a.NotNilNow(err)
 }
 
 type WrapMarshalablePointerStruct struct {
@@ -367,5 +383,28 @@ func TestEncodeStructWithIgnoredField(t *testing.T) {
 	data, err := csv.Marshal(sample)
 	a.NilNow(err)
 	expected := "id,email\n1,john@example.com\n"
+	a.EqualNow(string(data), expected)
+}
+
+type TimeStruct struct {
+	NoFmtTime    time.Time  `csv:"no_fmt_time"`
+	FmtTime      time.Time  `csv:"fmt_time,format=2006-01-02T15:04:05"`
+	NoFmtTimePtr *time.Time `csv:"no_fmt_time_ptr"`
+	FmtTimePtr   *time.Time `csv:"fmt_time_ptr,format=2006-01-02T15:04:05"`
+}
+
+func TestEncodeTimeStruct(t *testing.T) {
+	a := assert.New(t)
+	tm := time.Date(2025, 10, 1, 11, 30, 00, 0, time.UTC)
+	sample := TimeStruct{
+		NoFmtTime:    tm,
+		FmtTime:      tm,
+		NoFmtTimePtr: &tm,
+		FmtTimePtr:   &tm,
+	}
+
+	data, err := csv.Marshal(sample)
+	a.NilNow(err)
+	expected := "no_fmt_time,fmt_time,no_fmt_time_ptr,fmt_time_ptr\n2025-10-01T11:30:00Z,2025-10-01T11:30:00,2025-10-01T11:30:00Z,2025-10-01T11:30:00\n"
 	a.EqualNow(string(data), expected)
 }
