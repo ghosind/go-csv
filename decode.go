@@ -23,7 +23,9 @@ func Unmarshal(data []byte, v any) error {
 }
 
 type decodeState struct {
-	reader *csv.Reader
+	reader     *csv.Reader
+	lastRecord []string
+	useLast    bool
 }
 
 var decodeStatePool sync.Pool = sync.Pool{
@@ -53,20 +55,27 @@ func (d *decodeState) unmarshal(v any) error {
 		return err
 	}
 
-	header, err := d.reader.Read()
+	header, err := d.readLine()
 	if err != nil {
 		return err
 	}
 
 	// reorder meta according to header
 	orderedMeta := make([]*fieldMeta, len(header))
+	matched := false
 	for i, colName := range header {
 		for _, m := range meta {
 			if m.Name == colName {
 				orderedMeta[i] = m
+				matched = true
 				break
 			}
 		}
+	}
+
+	if !matched {
+		orderedMeta = meta
+		d.useLast = true
 	}
 
 	for rv.Kind() == reflect.Pointer {
@@ -111,8 +120,23 @@ func (d *decodeState) unmarshal(v any) error {
 	return nil
 }
 
+func (d *decodeState) readLine() ([]string, error) {
+	if d.useLast {
+		d.useLast = false
+		return d.lastRecord, nil
+	}
+
+	records, err := d.reader.Read()
+	if err != nil {
+		return nil, err
+	}
+
+	d.lastRecord = records
+	return records, nil
+}
+
 func (d *decodeState) readRecord(meta []*fieldMeta, v reflect.Value) (bool, error) {
-	record, err := d.reader.Read()
+	record, err := d.readLine()
 	if err != nil {
 		if errors.Is(err, io.EOF) {
 			return false, nil
