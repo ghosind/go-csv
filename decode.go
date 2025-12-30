@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"strconv"
 	"sync"
+	"time"
 )
 
 type Unmarshaler interface {
@@ -166,13 +167,17 @@ func (d *decodeState) readRecord(meta []*fieldMeta, v reflect.Value) (bool, erro
 	}
 
 	for i, col := range record {
+		if i >= len(meta) {
+			break
+		}
+
 		m := meta[i]
 		if m == nil {
 			continue
 		}
 
 		fv := v.Field(m.Index)
-		if err := valueDecoder(m)(col, fv); err != nil {
+		if err := d.marshalValue(col, fv, m); err != nil {
 			return false, err
 		}
 	}
@@ -180,54 +185,59 @@ func (d *decodeState) readRecord(meta []*fieldMeta, v reflect.Value) (bool, erro
 	return true, nil
 }
 
-type decoderFunc func(string, reflect.Value) error
-
-var decoderCache sync.Map
-
-func valueDecoder(meta *fieldMeta) decoderFunc {
-	return typeDecoder(meta.Type)
-}
-
-func typeDecoder(t reflect.Type) decoderFunc {
-	if fn, ok := decoderCache.Load(t); ok {
-		return fn.(decoderFunc)
-	}
-
-	f := newTypeDecoder(t)
-	decoderCache.Store(t, f)
-	return f
-}
-
 var (
 	unmarshalerType     = reflect.TypeFor[Unmarshaler]()
 	textUnmarshalerType = reflect.TypeFor[encoding.TextUnmarshaler]()
 )
 
-func newTypeDecoder(t reflect.Type) decoderFunc {
-	if t.Implements(unmarshalerType) {
-		return unmarshalerDecoder
+func (d *decodeState) newPointerDecoder(s string, v reflect.Value, m *fieldMeta) error {
+	// string pointer can be empty
+	if s == "" && v.Type().Elem().Kind() != reflect.String {
+		return nil
 	}
-	if t.Implements(textUnmarshalerType) {
-		return textUnmarshalerDecoder
+
+	if v.IsNil() {
+		v.Set(reflect.New(v.Type().Elem()))
 	}
+	v = v.Elem()
+
+	return d.marshalValue(s, v, m)
+}
+
+func (d *decodeState) marshalValue(col string, v reflect.Value, meta *fieldMeta) error {
+	if v.CanAddr() && v.Addr().Type().Implements(unmarshalerType) {
+		return unmarshalerDecoder(col, v.Addr(), meta)
+	}
+
+	t := v.Type()
 
 	switch t.Kind() {
 	case reflect.Bool:
-		return boolDecoder
+		return boolDecoder(col, v, meta)
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		return intDecoder
+		return intDecoder(col, v, meta)
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		return uintDecoder
+		return uintDecoder(col, v, meta)
 	case reflect.Float32, reflect.Float64:
-		return floatDecoder
+		return floatDecoder(col, v, meta)
 	case reflect.String:
-		return stringDecoder
-	default:
-		return unsupportedDecoder
+		return stringDecoder(col, v, meta)
+	case reflect.Pointer:
+		return d.newPointerDecoder(col, v, meta)
+	case reflect.Struct:
+		if t.ConvertibleTo(timeType) {
+			return timeDecoder(col, v, meta)
+		}
 	}
+
+	if v.CanAddr() && v.Addr().Type().Implements(textUnmarshalerType) {
+		return textUnmarshalerDecoder(col, v.Addr(), meta)
+	}
+
+	return unsupportedDecoder(col, v, meta)
 }
 
-func boolDecoder(s string, v reflect.Value) error {
+func boolDecoder(s string, v reflect.Value, _ *fieldMeta) error {
 	switch s {
 	case "true", "1":
 		v.SetBool(true)
@@ -239,7 +249,7 @@ func boolDecoder(s string, v reflect.Value) error {
 	return nil
 }
 
-func intDecoder(s string, v reflect.Value) error {
+func intDecoder(s string, v reflect.Value, _ *fieldMeta) error {
 	intVal, err := strconv.ParseInt(s, 10, 64)
 	if err != nil {
 		return err
@@ -248,7 +258,7 @@ func intDecoder(s string, v reflect.Value) error {
 	return nil
 }
 
-func uintDecoder(s string, v reflect.Value) error {
+func uintDecoder(s string, v reflect.Value, _ *fieldMeta) error {
 	uintVal, err := strconv.ParseUint(s, 10, 64)
 	if err != nil {
 		return err
@@ -257,7 +267,7 @@ func uintDecoder(s string, v reflect.Value) error {
 	return nil
 }
 
-func floatDecoder(s string, v reflect.Value) error {
+func floatDecoder(s string, v reflect.Value, _ *fieldMeta) error {
 	floatVal, err := strconv.ParseFloat(s, 64)
 	if err != nil {
 		return err
@@ -266,21 +276,45 @@ func floatDecoder(s string, v reflect.Value) error {
 	return nil
 }
 
-func stringDecoder(s string, v reflect.Value) error {
+func stringDecoder(s string, v reflect.Value, _ *fieldMeta) error {
 	v.SetString(s)
 	return nil
 }
 
-func unmarshalerDecoder(s string, v reflect.Value) error {
-	um := v.Interface().(Unmarshaler)
+func timeDecoder(s string, v reflect.Value, m *fieldMeta) error {
+	if s == "" {
+		return nil
+	}
+
+	layout := time.RFC3339Nano
+	if m.Format != "" {
+		layout = m.Format
+	}
+
+	tm, err := time.Parse(layout, s)
+	if err != nil {
+		return err
+	}
+	v.Set(reflect.ValueOf(tm))
+	return nil
+}
+
+func unmarshalerDecoder(s string, v reflect.Value, _ *fieldMeta) error {
+	um, ok := v.Interface().(Unmarshaler)
+	if !ok {
+		return ErrUnsupportedType
+	}
 	return um.UnmarshalCSV([]byte(s))
 }
 
-func textUnmarshalerDecoder(s string, v reflect.Value) error {
-	tum := v.Interface().(encoding.TextUnmarshaler)
+func textUnmarshalerDecoder(s string, v reflect.Value, _ *fieldMeta) error {
+	tum, ok := v.Interface().(encoding.TextUnmarshaler)
+	if !ok {
+		return ErrUnsupportedType
+	}
 	return tum.UnmarshalText([]byte(s))
 }
 
-func unsupportedDecoder(s string, v reflect.Value) error {
-	return nil
+func unsupportedDecoder(s string, v reflect.Value, _ *fieldMeta) error {
+	return ErrUnsupportedType
 }
