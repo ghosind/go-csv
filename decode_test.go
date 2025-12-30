@@ -7,6 +7,15 @@ import (
 	"github.com/ghosind/go-csv"
 )
 
+func TestDecodeEmpty(t *testing.T) {
+	a := assert.New(t)
+	data := ""
+	var sample *SampleStruct
+	err := csv.Unmarshal([]byte(data), sample)
+	a.NilNow(err)
+	a.NilNow(sample)
+}
+
 func TestDecodeStruct(t *testing.T) {
 	a := assert.New(t)
 	data := "id,name,age,salary,is_manager\n1,John Doe,30,5500,true\n"
@@ -47,6 +56,15 @@ func TestEmptyCSVToStruct(t *testing.T) {
 	a.NilNow(err)
 	expected := SampleStruct{}
 	a.EqualNow(expected, sample)
+}
+
+func TestEmptyCSVToStructPointer(t *testing.T) {
+	a := assert.New(t)
+	data := "id,name,age,salary,is_manager\n"
+	var sample *SampleStruct
+	err := csv.Unmarshal([]byte(data), &sample)
+	a.NilNow(err)
+	a.NilNow(sample)
 }
 
 func TestDecodeStructSlice(t *testing.T) {

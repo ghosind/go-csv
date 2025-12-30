@@ -6,8 +6,9 @@ import (
 )
 
 var (
-	ErrInvalidType     = errors.New("invalid type for CSV operation")
-	ErrUnsupportedType = errors.New("unsupported type for CSV operation")
+	ErrInvalidType     = errors.New("csv: invalid type")
+	ErrUnsupportedType = errors.New("csv: unsupported type")
+	ErrCannotSet       = errors.New("csv: cannot set value to nil pointer")
 )
 
 func newInvalidUnmarshalError(rv reflect.Value) error {

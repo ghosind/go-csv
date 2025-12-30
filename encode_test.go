@@ -10,6 +10,14 @@ import (
 	"github.com/ghosind/go-csv"
 )
 
+func TestEncodeNonStruct(t *testing.T) {
+	a := assert.New(t)
+	val := 1
+	_, err := csv.Marshal(val)
+	a.NotNilNow(err)
+	a.IsErrorNow(err, csv.ErrInvalidType)
+}
+
 type SampleStruct struct {
 	ID        int     `csv:"id"`
 	Name      string  `csv:"name"`

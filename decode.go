@@ -50,43 +50,20 @@ func (d *decodeState) unmarshal(v any) error {
 		return newInvalidUnmarshalError(rv)
 	}
 
-	meta, err := reflectMetadata(rv)
+	meta, err := d.getMetaFields(rv)
 	if err != nil {
-		return err
-	}
-
-	header, err := d.readLine()
-	if err != nil {
-		return err
-	}
-
-	// reorder meta according to header
-	orderedMeta := make([]*fieldMeta, len(header))
-	matched := false
-	for i, colName := range header {
-		for _, m := range meta {
-			if m.Name == colName {
-				orderedMeta[i] = m
-				matched = true
-				break
-			}
+		if errors.Is(err, io.EOF) {
+			return nil
 		}
-	}
-
-	if !matched {
-		orderedMeta = meta
-		d.useLast = true
+		return err
 	}
 
 	for rv.Kind() == reflect.Pointer {
-		if rv.IsNil() {
-			rv.Set(reflect.New(rv.Type().Elem()))
-		}
 		rv = rv.Elem()
 	}
 
 	if rv.Kind() != reflect.Slice && rv.Kind() != reflect.Array {
-		_, err := d.readRecord(orderedMeta, rv)
+		_, err := d.readRecord(meta, rv)
 		return err
 	}
 
@@ -102,7 +79,7 @@ func (d *decodeState) unmarshal(v any) error {
 			elem = reflect.New(rv.Type().Elem())
 		}
 
-		ok, err := d.readRecord(orderedMeta, elem)
+		ok, err := d.readRecord(meta, elem)
 		if err != nil {
 			return err
 		}
@@ -118,6 +95,40 @@ func (d *decodeState) unmarshal(v any) error {
 	}
 
 	return nil
+}
+
+func (d *decodeState) getMetaFields(rv reflect.Value) ([]*fieldMeta, error) {
+	meta, err := reflectMetadata(rv)
+	if err != nil {
+		return nil, err
+	}
+
+	header, err := d.readLine()
+	if err != nil {
+		return nil, err
+	}
+
+	// reorder meta according to header
+	orderedMeta := make([]*fieldMeta, len(header))
+	matched := false
+	for i, colName := range header {
+		for _, m := range meta {
+			if m.Name == colName {
+				orderedMeta[i] = m
+				matched = true
+				break
+			}
+		}
+	}
+
+	// skip header parse if no field matched
+	if !matched {
+		// mark the last record to reuse
+		d.useLast = true
+		return meta, nil
+	}
+
+	return orderedMeta, nil
 }
 
 func (d *decodeState) readLine() ([]string, error) {
@@ -147,7 +158,7 @@ func (d *decodeState) readRecord(meta []*fieldMeta, v reflect.Value) (bool, erro
 	for v.Kind() == reflect.Pointer {
 		if v.IsNil() {
 			if !v.CanSet() {
-				return false, errors.New("csv: cannot set value to nil pointer")
+				return false, ErrCannotSet
 			}
 			v.Set(reflect.New(v.Type().Elem()))
 		}
