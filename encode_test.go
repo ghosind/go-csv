@@ -2,6 +2,7 @@ package csv_test
 
 import (
 	"errors"
+	"fmt"
 	"strconv"
 	"testing"
 	"time"
@@ -415,4 +416,21 @@ func TestEncodeTimeStruct(t *testing.T) {
 	a.NilNow(err)
 	expected := "no_fmt_time,fmt_time,no_fmt_time_ptr,fmt_time_ptr\n2025-10-01T11:30:00Z,2025-10-01T11:30:00,2025-10-01T11:30:00Z,2025-10-01T11:30:00\n"
 	a.EqualNow(string(data), expected)
+}
+
+func ExampleMarshal() {
+	type Person struct {
+		ID   int
+		Name string
+	}
+
+	person := Person{ID: 1, Name: "Alice"}
+	data, err := csv.Marshal(person)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(string(data))
+	// Output:
+	// ID,Name
+	// 1,Alice
 }

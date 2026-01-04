@@ -383,3 +383,24 @@ func TestDecodeTimeStruct(t *testing.T) {
 	}
 	a.DeepEqualNow(sample, expected)
 }
+
+func ExampleUnmarshal() {
+	type Person struct {
+		ID   int    `csv:"id"`
+		Name string `csv:"name"`
+	}
+
+	data := "id,name\n1,John Doe\n2,Jane Smith\n"
+	var people []Person
+	err := csv.Unmarshal([]byte(data), &people)
+	if err != nil {
+		panic(err)
+	}
+
+	for _, p := range people {
+		fmt.Printf("ID: %d, Name: %s\n", p.ID, p.Name)
+	}
+	// Output:
+	// ID: 1, Name: John Doe
+	// ID: 2, Name: Jane Smith
+}
