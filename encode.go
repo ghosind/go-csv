@@ -11,13 +11,16 @@ import (
 	"time"
 )
 
+// Marshaler is the interface implemented by types that can marshal a CSV
+// record representation of themselves.
 type Marshaler interface {
 	MarshalCSV() ([]byte, error)
 }
 
-func Marshal(v any) ([]byte, error) {
+// Marshal returns the CSV encoding of v.
+func Marshal(v any, opts ...CSVOption) ([]byte, error) {
 	buf := bytes.NewBuffer([]byte{})
-	e := newEncodeState(buf)
+	e := newEncodeState(buf, opts...)
 	defer encodeStatePool.Put(e)
 
 	if err := e.marshal(v); err != nil {
@@ -26,6 +29,19 @@ func Marshal(v any) ([]byte, error) {
 	e.writer.Flush()
 
 	return buf.Bytes(), nil
+}
+
+// MarshalWriter writes the CSV encoding of v to writer.
+func MarshalWriter(v any, writer io.Writer, opts ...CSVOption) error {
+	e := newEncodeState(writer, opts...)
+	defer encodeStatePool.Put(e)
+
+	if err := e.marshal(v); err != nil {
+		return err
+	}
+	e.writer.Flush()
+
+	return nil
 }
 
 type encodeState struct {
@@ -38,8 +54,20 @@ var encodeStatePool sync.Pool = sync.Pool{
 	},
 }
 
-func newEncodeState(writer io.Writer) *encodeState {
+func newEncodeState(writer io.Writer, opts ...CSVOption) *encodeState {
+	builder := &csvBuilder{
+		comma:   ',',
+		useCRLF: false,
+	}
+
+	for _, opt := range opts {
+		opt(builder)
+	}
+
 	csvWriter := csv.NewWriter(writer)
+	csvWriter.Comma = builder.comma
+	csvWriter.UseCRLF = builder.useCRLF
+
 	if v := encodeStatePool.Get(); v != nil {
 		e := v.(*encodeState)
 		e.writer = csvWriter
@@ -235,6 +263,6 @@ func textMarshalerEncoder(v reflect.Value, _ *fieldMeta) (string, error) {
 	return string(b), nil
 }
 
-func unsupportedTypeEncoder(v reflect.Value, _ *fieldMeta) (string, error) {
+func unsupportedTypeEncoder(_ reflect.Value, _ *fieldMeta) (string, error) {
 	return "", ErrUnsupportedType
 }

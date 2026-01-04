@@ -1,6 +1,7 @@
 package csv_test
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"strconv"
@@ -416,6 +417,55 @@ func TestEncodeTimeStruct(t *testing.T) {
 	a.NilNow(err)
 	expected := "no_fmt_time,fmt_time,no_fmt_time_ptr,fmt_time_ptr\n2025-10-01T11:30:00Z,2025-10-01T11:30:00,2025-10-01T11:30:00Z,2025-10-01T11:30:00\n"
 	a.EqualNow(string(data), expected)
+}
+
+func TestEncodeToWriter(t *testing.T) {
+	a := assert.New(t)
+	sample := SampleStruct{
+		ID:        1,
+		Name:      "John Doe",
+		Age:       30,
+		Salary:    5500,
+		IsManager: true,
+	}
+
+	buf := &bytes.Buffer{}
+	err := csv.MarshalWriter(sample, buf)
+	a.NilNow(err)
+	expected := "id,name,age,salary,is_manager\n1,John Doe,30,5500,true\n"
+	a.EqualNow(expected, buf.String())
+}
+
+func TestEncodeWithCommaOption(t *testing.T) {
+	a := assert.New(t)
+	sample := SampleStruct{
+		ID:        1,
+		Name:      "John Doe",
+		Age:       30,
+		Salary:    5500,
+		IsManager: true,
+	}
+
+	data, err := csv.Marshal(sample, csv.WithComma(';'))
+	a.NilNow(err)
+	expected := "id;name;age;salary;is_manager\n1;John Doe;30;5500;true\n"
+	a.EqualNow(expected, string(data))
+}
+
+func TestEncodeWithCRLFOption(t *testing.T) {
+	a := assert.New(t)
+	sample := SampleStruct{
+		ID:        1,
+		Name:      "John Doe",
+		Age:       30,
+		Salary:    5500,
+		IsManager: true,
+	}
+
+	data, err := csv.Marshal(sample, csv.WithCRLF(true))
+	a.NilNow(err)
+	expected := "id,name,age,salary,is_manager\r\n1,John Doe,30,5500,true\r\n"
+	a.EqualNow(expected, string(data))
 }
 
 func ExampleMarshal() {
