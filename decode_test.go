@@ -1,6 +1,7 @@
 package csv_test
 
 import (
+	"bytes"
 	"fmt"
 	"testing"
 	"time"
@@ -382,6 +383,80 @@ func TestDecodeTimeStruct(t *testing.T) {
 		FmtTimePtr:   &tm,
 	}
 	a.DeepEqualNow(sample, expected)
+}
+
+func TestDecoder_Decode(t *testing.T) {
+	a := assert.New(t)
+	data := "id,name,age,salary,is_manager\n1,John Doe,30,5500,true\n"
+	decoder := csv.NewDecoder(bytes.NewReader([]byte(data)))
+	var sample SampleStruct
+	err := decoder.Decode(&sample)
+	a.NilNow(err)
+	expected := SampleStruct{
+		ID:        1,
+		Name:      "John Doe",
+		Age:       30,
+		Salary:    5500,
+		IsManager: true,
+	}
+	a.EqualNow(expected, sample)
+}
+
+func TestDecoderWithCommaOption(t *testing.T) {
+	a := assert.New(t)
+	data := "id;name;age;salary;is_manager\n1;John Doe;30;5500;true\n"
+	var sample SampleStruct
+
+	reader := bytes.NewReader([]byte(data))
+	decoder := csv.NewDecoder(reader, csv.WithComma(';'))
+	err := decoder.Decode(&sample)
+	a.NilNow(err)
+	expected := SampleStruct{
+		ID:        1,
+		Name:      "John Doe",
+		Age:       30,
+		Salary:    5500,
+		IsManager: true,
+	}
+	a.EqualNow(expected, sample)
+}
+
+func TestDecoderWithCSLFOption(t *testing.T) {
+	a := assert.New(t)
+	data := "id,name,age,salary,is_manager\r\n1,John Doe,30,5500,true\r\n"
+	var sample SampleStruct
+
+	reader := bytes.NewReader([]byte(data))
+	decoder := csv.NewDecoder(reader, csv.WithCRLF(true))
+	err := decoder.Decode(&sample)
+	a.NilNow(err)
+	expected := SampleStruct{
+		ID:        1,
+		Name:      "John Doe",
+		Age:       30,
+		Salary:    5500,
+		IsManager: true,
+	}
+	a.EqualNow(expected, sample)
+}
+
+func TestDecoderWithNoHeaderOption(t *testing.T) {
+	a := assert.New(t)
+	data := "1,John Doe,30,5500,true\n"
+	var sample SampleStruct
+
+	reader := bytes.NewReader([]byte(data))
+	decoder := csv.NewDecoder(reader, csv.WithNoHeader(true))
+	err := decoder.Decode(&sample)
+	a.NilNow(err)
+	expected := SampleStruct{
+		ID:        1,
+		Name:      "John Doe",
+		Age:       30,
+		Salary:    5500,
+		IsManager: true,
+	}
+	a.EqualNow(expected, sample)
 }
 
 func ExampleUnmarshal() {

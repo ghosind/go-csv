@@ -419,7 +419,7 @@ func TestEncodeTimeStruct(t *testing.T) {
 	a.EqualNow(string(data), expected)
 }
 
-func TestEncodeToWriter(t *testing.T) {
+func TestEncoder_Encode(t *testing.T) {
 	a := assert.New(t)
 	sample := SampleStruct{
 		ID:        1,
@@ -430,13 +430,14 @@ func TestEncodeToWriter(t *testing.T) {
 	}
 
 	buf := &bytes.Buffer{}
-	err := csv.MarshalWriter(sample, buf)
+	encoder := csv.NewEncoder(buf)
+	err := encoder.Encode(sample)
 	a.NilNow(err)
 	expected := "id,name,age,salary,is_manager\n1,John Doe,30,5500,true\n"
 	a.EqualNow(expected, buf.String())
 }
 
-func TestEncodeWithCommaOption(t *testing.T) {
+func TestEncoderWithCommaOption(t *testing.T) {
 	a := assert.New(t)
 	sample := SampleStruct{
 		ID:        1,
@@ -446,13 +447,15 @@ func TestEncodeWithCommaOption(t *testing.T) {
 		IsManager: true,
 	}
 
-	data, err := csv.Marshal(sample, csv.WithComma(';'))
+	buf := &bytes.Buffer{}
+	encoder := csv.NewEncoder(buf, csv.WithComma(';'))
+	err := encoder.Encode(sample)
 	a.NilNow(err)
 	expected := "id;name;age;salary;is_manager\n1;John Doe;30;5500;true\n"
-	a.EqualNow(expected, string(data))
+	a.EqualNow(expected, buf.String())
 }
 
-func TestEncodeWithCRLFOption(t *testing.T) {
+func TestEncoderWithCRLFOption(t *testing.T) {
 	a := assert.New(t)
 	sample := SampleStruct{
 		ID:        1,
@@ -462,10 +465,30 @@ func TestEncodeWithCRLFOption(t *testing.T) {
 		IsManager: true,
 	}
 
-	data, err := csv.Marshal(sample, csv.WithCRLF(true))
+	buf := &bytes.Buffer{}
+	encoder := csv.NewEncoder(buf, csv.WithCRLF(true))
+	err := encoder.Encode(sample)
 	a.NilNow(err)
 	expected := "id,name,age,salary,is_manager\r\n1,John Doe,30,5500,true\r\n"
-	a.EqualNow(expected, string(data))
+	a.EqualNow(expected, buf.String())
+}
+
+func TestEncoderWithNoHeaderOption(t *testing.T) {
+	a := assert.New(t)
+	sample := SampleStruct{
+		ID:        1,
+		Name:      "John Doe",
+		Age:       30,
+		Salary:    5500,
+		IsManager: true,
+	}
+
+	buf := &bytes.Buffer{}
+	encoder := csv.NewEncoder(buf, csv.WithNoHeader(true))
+	err := encoder.Encode(sample)
+	a.NilNow(err)
+	expected := "1,John Doe,30,5500,true\n"
+	a.EqualNow(expected, buf.String())
 }
 
 func ExampleMarshal() {

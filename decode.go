@@ -17,35 +17,45 @@ type Unmarshaler interface {
 }
 
 func Unmarshal(data []byte, v any) error {
-	e := newDecodeState(bytes.NewReader(data))
-	defer decodeStatePool.Put(e)
+	e := NewDecoder(bytes.NewReader(data))
+	defer decoderPool.Put(e)
 
 	return e.unmarshal(v)
 }
 
-type decodeState struct {
+type Decoder struct {
 	reader     *csv.Reader
 	lastRecord []string
 	useLast    bool
+	noHeader   bool
 }
 
-var decodeStatePool sync.Pool = sync.Pool{
+var decoderPool sync.Pool = sync.Pool{
 	New: func() any {
-		return &decodeState{}
+		return &Decoder{}
 	},
 }
 
-func newDecodeState(reader io.Reader) *decodeState {
+func NewDecoder(reader io.Reader, opts ...CSVOption) *Decoder {
+	builder := newCSVBuilder(opts...)
+
 	csvReader := csv.NewReader(reader)
-	if v := decodeStatePool.Get(); v != nil {
-		d := v.(*decodeState)
-		d.reader = csvReader
-		return d
+	v := decoderPool.Get()
+	if v == nil {
+		v = &Decoder{}
 	}
-	return &decodeState{reader: csvReader}
+	d := v.(*Decoder)
+	csvReader.Comma = builder.comma
+	d.reader = csvReader
+	d.noHeader = builder.noHeader
+	return d
 }
 
-func (d *decodeState) unmarshal(v any) error {
+func (d *Decoder) Decode(v any) error {
+	return d.unmarshal(v)
+}
+
+func (d *Decoder) unmarshal(v any) error {
 	rv := reflect.ValueOf(v)
 	if rv.Kind() != reflect.Ptr {
 		return newInvalidUnmarshalError(rv)
@@ -98,10 +108,14 @@ func (d *decodeState) unmarshal(v any) error {
 	return nil
 }
 
-func (d *decodeState) getMetaFields(rv reflect.Value) ([]*fieldMeta, error) {
+func (d *Decoder) getMetaFields(rv reflect.Value) ([]*fieldMeta, error) {
 	meta, err := reflectMetadata(rv)
 	if err != nil {
 		return nil, err
+	}
+
+	if d.noHeader {
+		return meta, nil
 	}
 
 	header, err := d.readLine()
@@ -132,7 +146,7 @@ func (d *decodeState) getMetaFields(rv reflect.Value) ([]*fieldMeta, error) {
 	return orderedMeta, nil
 }
 
-func (d *decodeState) readLine() ([]string, error) {
+func (d *Decoder) readLine() ([]string, error) {
 	if d.useLast {
 		d.useLast = false
 		return d.lastRecord, nil
@@ -147,7 +161,7 @@ func (d *decodeState) readLine() ([]string, error) {
 	return records, nil
 }
 
-func (d *decodeState) readRecord(meta []*fieldMeta, v reflect.Value) (bool, error) {
+func (d *Decoder) readRecord(meta []*fieldMeta, v reflect.Value) (bool, error) {
 	record, err := d.readLine()
 	if err != nil {
 		if errors.Is(err, io.EOF) {
@@ -190,7 +204,7 @@ var (
 	textUnmarshalerType = reflect.TypeFor[encoding.TextUnmarshaler]()
 )
 
-func (d *decodeState) newPointerDecoder(s string, v reflect.Value, m *fieldMeta) error {
+func (d *Decoder) newPointerDecoder(s string, v reflect.Value, m *fieldMeta) error {
 	// string pointer can be empty
 	if s == "" && v.Type().Elem().Kind() != reflect.String {
 		return nil
@@ -204,7 +218,7 @@ func (d *decodeState) newPointerDecoder(s string, v reflect.Value, m *fieldMeta)
 	return d.marshalValue(s, v, m)
 }
 
-func (d *decodeState) marshalValue(col string, v reflect.Value, meta *fieldMeta) error {
+func (d *Decoder) marshalValue(col string, v reflect.Value, meta *fieldMeta) error {
 	if v.CanAddr() && v.Addr().Type().Implements(unmarshalerType) {
 		return unmarshalerDecoder(col, v.Addr(), meta)
 	}
@@ -315,6 +329,6 @@ func textUnmarshalerDecoder(s string, v reflect.Value, _ *fieldMeta) error {
 	return tum.UnmarshalText([]byte(s))
 }
 
-func unsupportedDecoder(s string, v reflect.Value, _ *fieldMeta) error {
+func unsupportedDecoder(_ string, _ reflect.Value, _ *fieldMeta) error {
 	return ErrUnsupportedType
 }

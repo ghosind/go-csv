@@ -17,11 +17,22 @@ type Marshaler interface {
 	MarshalCSV() ([]byte, error)
 }
 
+type Encoder struct {
+	writer   *csv.Writer
+	noHeader bool
+}
+
+var encoderPool sync.Pool = sync.Pool{
+	New: func() any {
+		return &Encoder{}
+	},
+}
+
 // Marshal returns the CSV encoding of v.
-func Marshal(v any, opts ...CSVOption) ([]byte, error) {
+func Marshal(v any) ([]byte, error) {
 	buf := bytes.NewBuffer([]byte{})
-	e := newEncodeState(buf, opts...)
-	defer encodeStatePool.Put(e)
+	e := NewEncoder(buf)
+	defer encoderPool.Put(e)
 
 	if err := e.marshal(v); err != nil {
 		return nil, err
@@ -31,52 +42,30 @@ func Marshal(v any, opts ...CSVOption) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// MarshalWriter writes the CSV encoding of v to writer.
-func MarshalWriter(v any, writer io.Writer, opts ...CSVOption) error {
-	e := newEncodeState(writer, opts...)
-	defer encodeStatePool.Put(e)
-
-	if err := e.marshal(v); err != nil {
-		return err
-	}
-	e.writer.Flush()
-
-	return nil
-}
-
-type encodeState struct {
-	writer *csv.Writer
-}
-
-var encodeStatePool sync.Pool = sync.Pool{
-	New: func() any {
-		return &encodeState{}
-	},
-}
-
-func newEncodeState(writer io.Writer, opts ...CSVOption) *encodeState {
-	builder := &csvBuilder{
-		comma:   ',',
-		useCRLF: false,
-	}
-
-	for _, opt := range opts {
-		opt(builder)
-	}
+func NewEncoder(writer io.Writer, opts ...CSVOption) *Encoder {
+	builder := newCSVBuilder(opts...)
 
 	csvWriter := csv.NewWriter(writer)
 	csvWriter.Comma = builder.comma
 	csvWriter.UseCRLF = builder.useCRLF
 
-	if v := encodeStatePool.Get(); v != nil {
-		e := v.(*encodeState)
-		e.writer = csvWriter
-		return e
+	v := encoderPool.Get()
+	if v == nil {
+		v = &Encoder{}
 	}
-	return &encodeState{writer: csvWriter}
+	e := v.(*Encoder)
+	e.writer = csvWriter
+	e.noHeader = builder.noHeader
+	return e
 }
 
-func (e *encodeState) marshal(v any) (err error) {
+func (e *Encoder) Encode(v any) error {
+	defer e.writer.Flush()
+
+	return e.marshal(v)
+}
+
+func (e *Encoder) marshal(v any) error {
 	rv := reflect.ValueOf(v)
 	if !rv.IsValid() {
 		return nil
@@ -88,12 +77,14 @@ func (e *encodeState) marshal(v any) (err error) {
 	}
 
 	// write header
-	header := make([]string, len(meta))
-	for i, m := range meta {
-		header[i] = m.Name
-	}
-	if err := e.writer.Write(header); err != nil {
-		return err
+	if !e.noHeader {
+		header := make([]string, len(meta))
+		for i, m := range meta {
+			header[i] = m.Name
+		}
+		if err := e.writer.Write(header); err != nil {
+			return err
+		}
 	}
 
 	// write rows
@@ -110,7 +101,7 @@ func (e *encodeState) marshal(v any) (err error) {
 	return nil
 }
 
-func (e *encodeState) writeRow(v reflect.Value, meta []*fieldMeta) error {
+func (e *Encoder) writeRow(v reflect.Value, meta []*fieldMeta) error {
 	row := make([]string, len(meta))
 
 	for v.Kind() == reflect.Ptr {
