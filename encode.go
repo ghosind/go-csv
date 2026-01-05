@@ -87,15 +87,29 @@ func (e *Encoder) marshal(v any) error {
 		}
 	}
 
-	// write rows
-	if rv.Kind() != reflect.Slice && rv.Kind() != reflect.Array {
-		return e.writeRow(rv, meta)
-	}
-
-	for i := 0; i < rv.Len(); i++ {
-		if err := e.writeRow(rv.Index(i), meta); err != nil {
-			return err
+	switch rv.Kind() {
+	case reflect.Slice, reflect.Array:
+		if rv.Len() == 0 {
+			return nil
 		}
+
+		for i := 0; i < rv.Len(); i++ {
+			if err := e.writeRow(rv.Index(i), meta); err != nil {
+				return err
+			}
+		}
+	case reflect.Chan:
+		for {
+			elem, ok := rv.Recv()
+			if !ok {
+				break
+			}
+			if err := e.writeRow(elem, meta); err != nil {
+				return err
+			}
+		}
+	default:
+		return e.writeRow(rv, meta)
 	}
 
 	return nil

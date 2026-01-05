@@ -211,6 +211,27 @@ func TestDecodeStructArrayLargerThanSize(t *testing.T) {
 	a.EqualNow(expected, samples)
 }
 
+func TestDecodeStructChannel(t *testing.T) {
+	a := assert.New(t)
+	data := "id,name,age,salary,is_manager\n1,John Doe,30,5500,true\n2,Jane Smith,25,3000,false\n"
+	var samplesChan chan SampleStruct
+	samplesChan = make(chan SampleStruct, 2)
+	err := csv.Unmarshal([]byte(data), &samplesChan)
+	a.NilNow(err)
+	close(samplesChan)
+
+	expected := []SampleStruct{
+		{ID: 1, Name: "John Doe", Age: 30, Salary: 5500, IsManager: true},
+		{ID: 2, Name: "Jane Smith", Age: 25, Salary: 3000, IsManager: false},
+	}
+
+	i := 0
+	for sample := range samplesChan {
+		a.EqualNow(expected[i], sample)
+		i++
+	}
+}
+
 func TestDecodePointerFieldsStruct(t *testing.T) {
 	a := assert.New(t)
 	data := "id,name,age,salary,is_manager\n1,John Doe,30,5500,true\n"

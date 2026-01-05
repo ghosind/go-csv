@@ -73,36 +73,49 @@ func (d *Decoder) unmarshal(v any) error {
 		rv = rv.Elem()
 	}
 
-	if rv.Kind() != reflect.Slice && rv.Kind() != reflect.Array {
+	switch rv.Kind() {
+	case reflect.Slice, reflect.Array:
+		for i := 0; ; i++ {
+			if rv.Kind() == reflect.Array && i >= rv.Len() {
+				break
+			}
+
+			var elem reflect.Value
+			if i < rv.Len() {
+				elem = rv.Index(i)
+			} else {
+				elem = reflect.New(rv.Type().Elem())
+			}
+
+			ok, err := d.readRecord(meta, elem)
+			if err != nil {
+				return err
+			}
+			if !ok {
+				break
+			}
+
+			if i < rv.Len() {
+				rv.Index(i).Set(elem)
+			} else {
+				rv.Set(reflect.Append(rv, elem.Elem()))
+			}
+		}
+	case reflect.Chan:
+		for {
+			elem := reflect.New(rv.Type().Elem()).Elem()
+			ok, err := d.readRecord(meta, elem)
+			if err != nil {
+				return err
+			}
+			if !ok {
+				break
+			}
+			rv.Send(elem)
+		}
+	default:
 		_, err := d.readRecord(meta, rv)
 		return err
-	}
-
-	for i := 0; ; i++ {
-		if rv.Kind() == reflect.Array && i >= rv.Len() {
-			break
-		}
-
-		var elem reflect.Value
-		if i < rv.Len() {
-			elem = rv.Index(i)
-		} else {
-			elem = reflect.New(rv.Type().Elem())
-		}
-
-		ok, err := d.readRecord(meta, elem)
-		if err != nil {
-			return err
-		}
-		if !ok {
-			break
-		}
-
-		if i < rv.Len() {
-			rv.Index(i).Set(elem)
-		} else {
-			rv.Set(reflect.Append(rv, elem.Elem()))
-		}
 	}
 
 	return nil

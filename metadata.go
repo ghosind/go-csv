@@ -65,7 +65,7 @@ func getValueType(v reflect.Value) (reflect.Type, error) {
 	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
-	if t.Kind() == reflect.Slice || t.Kind() == reflect.Array {
+	if t.Kind() == reflect.Chan || t.Kind() == reflect.Slice || t.Kind() == reflect.Array {
 		t = t.Elem()
 	}
 	for t.Kind() == reflect.Ptr {

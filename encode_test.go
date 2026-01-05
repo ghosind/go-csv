@@ -115,6 +115,43 @@ func TestEncodeStructSlicePointer(t *testing.T) {
 	a.EqualNow(expected, string(data))
 }
 
+func TestEncodeEmptyChannel(t *testing.T) {
+	a := assert.New(t)
+	samples := make(chan SampleStruct)
+	close(samples)
+
+	data, err := csv.Marshal(samples)
+	a.NilNow(err)
+	expected := "id,name,age,salary,is_manager\n"
+	a.EqualNow(expected, string(data))
+}
+
+func TestEncodeStructChannel(t *testing.T) {
+	a := assert.New(t)
+	samples := make(chan SampleStruct, 2)
+	samples <- SampleStruct{ID: 1, Name: "John Doe", Age: 30, Salary: 5500, IsManager: true}
+	samples <- SampleStruct{ID: 2, Name: "Jane Smith", Age: 25, Salary: 3000, IsManager: false}
+	close(samples)
+
+	data, err := csv.Marshal(samples)
+	a.NilNow(err)
+	expected := "id,name,age,salary,is_manager\n1,John Doe,30,5500,true\n2,Jane Smith,25,3000,false\n"
+	a.EqualNow(expected, string(data))
+}
+
+func TestEncodeStructPointerChannel(t *testing.T) {
+	a := assert.New(t)
+	samples := make(chan *SampleStruct, 2)
+	samples <- &SampleStruct{ID: 1, Name: "John Doe", Age: 30, Salary: 5500, IsManager: true}
+	samples <- &SampleStruct{ID: 2, Name: "Jane Smith", Age: 25, Salary: 3000, IsManager: false}
+	close(samples)
+
+	data, err := csv.Marshal(samples)
+	a.NilNow(err)
+	expected := "id,name,age,salary,is_manager\n1,John Doe,30,5500,true\n2,Jane Smith,25,3000,false\n"
+	a.EqualNow(expected, string(data))
+}
+
 func TestEncodeStructArray(t *testing.T) {
 	a := assert.New(t)
 	samples := [2]SampleStruct{
