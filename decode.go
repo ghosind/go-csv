@@ -87,7 +87,7 @@ func (d *Decoder) unmarshal(v any) error {
 				elem = reflect.New(rv.Type().Elem())
 			}
 
-			ok, err := d.readRecord(meta, elem)
+			ok, err := d.readRecord(meta, elem, i+1)
 			if err != nil {
 				return err
 			}
@@ -102,9 +102,9 @@ func (d *Decoder) unmarshal(v any) error {
 			}
 		}
 	case reflect.Chan:
-		for {
+		for i := 0; ; i++ {
 			elem := reflect.New(rv.Type().Elem()).Elem()
-			ok, err := d.readRecord(meta, elem)
+			ok, err := d.readRecord(meta, elem, i+1)
 			if err != nil {
 				return err
 			}
@@ -114,7 +114,7 @@ func (d *Decoder) unmarshal(v any) error {
 			rv.Send(elem)
 		}
 	default:
-		_, err := d.readRecord(meta, rv)
+		_, err := d.readRecord(meta, rv, 1)
 		return err
 	}
 
@@ -174,7 +174,7 @@ func (d *Decoder) readLine() ([]string, error) {
 	return records, nil
 }
 
-func (d *Decoder) readRecord(meta []*fieldMeta, v reflect.Value) (bool, error) {
+func (d *Decoder) readRecord(meta []*fieldMeta, v reflect.Value, line int) (bool, error) {
 	record, err := d.readLine()
 	if err != nil {
 		if errors.Is(err, io.EOF) {
@@ -205,7 +205,7 @@ func (d *Decoder) readRecord(meta []*fieldMeta, v reflect.Value) (bool, error) {
 
 		fv := v.Field(m.Index)
 		if err := d.marshalValue(col, fv, m); err != nil {
-			return false, err
+			return false, newDecodeError(line, i+1, m.Name, col, err)
 		}
 	}
 

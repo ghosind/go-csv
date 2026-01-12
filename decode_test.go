@@ -49,6 +49,11 @@ func TestDecodeStructWithErrorValue(t *testing.T) {
 	var sample SampleStruct
 	err := csv.Unmarshal([]byte(data), &sample)
 	a.NotNilNow(err)
+	decodeErr := err.(*csv.DecodeError)
+	a.EqualNow(decodeErr.Row(), 1)
+	a.EqualNow(decodeErr.Col(), 3)
+	a.EqualNow(decodeErr.Field(), "age")
+	a.EqualNow(decodeErr.Value(), "thirty")
 }
 
 func TestDecodeStructWithInvalidBoolValue(t *testing.T) {
